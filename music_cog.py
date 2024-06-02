@@ -11,7 +11,11 @@ class music_cog(commands.Cog):
         self.is_paused = False   # Flag to track if music is paused
         self.music_queue = []    # List to store queued songs
         self.YDL_OPTIONS = {'format': 'bestaudio/best'}  # Options for YoutubeDL
-        self.FFMPEG_OPTIONS = {'options': '-vn'}          # Options for FFmpeg
+        
+        self.FFMPEG_OPTIONS = {                             # FFmpeg options 
+            'options': '-vn',  # Disable video processing
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',  # Additional options before input
+        }
         self.vc = None           # VoiceClient object for the bot's voice connection
         self.ytdl = YoutubeDL(self.YDL_OPTIONS)           # YoutubeDL object for downloading YouTube videos
 
