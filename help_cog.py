@@ -9,22 +9,32 @@ class help_cog(commands.Cog):
         self.set_message()
 
     def set_message(self):
-        self.help_message = f"""
-```
-Welcome to the Benji Bot!
-This is an unofficial music bot to play and stream music from YouTube. Below consists of the list of commands and their capabilities
-{self.bot.command_prefix}help - displays all the available commands
-{self.bot.command_prefix}q - displays the current music queue
-{self.bot.command_prefix}p <keywords> - finds the song on youtube and plays it in your current channel. Will resume playing the current song if it was paused
-{self.bot.command_prefix}skip - skips the current song being played
-{self.bot.command_prefix}clear - Stops the music and clears the queue
-{self.bot.command_prefix}stop - Disconnected the bot from the voice channel
-{self.bot.command_prefix}pause - pauses the current song being played or resumes if already paused
-{self.bot.command_prefix}resume - resumes playing the current song
-{self.bot.command_prefix}prefix - change command prefix
-{self.bot.command_prefix}remove - removes last song from the queue
-```
-"""
+        embed = discord.Embed(
+            title="Welcome to the Benji Bot!",
+            description="This is an unofficial music bot to play and stream music from YouTube. Below consists of the list of commands and their capabilities.",
+            color=discord.Color.blue()  # You can set any color you like
+        )
+
+        embed.add_field(
+            name="Commands",
+            value=(
+                f"**{self.bot.command_prefix}help** - Displays all the available commands\n"
+                f"**{self.bot.command_prefix}q** - Displays the current music queue\n"
+                f"**{self.bot.command_prefix}p <keywords>** - Finds the song on YouTube and plays it in your current channel. Will resume playing the current song if it was paused\n"
+                f"**{self.bot.command_prefix}skip** - Skips the current song being played\n"
+                f"**{self.bot.command_prefix}clear** - Stops the music and clears the queue\n"
+                f"**{self.bot.command_prefix}stop** - Disconnects the bot from the voice channel\n"
+                f"**{self.bot.command_prefix}pause** - Pauses the current song being played or resumes if already paused\n"
+                f"**{self.bot.command_prefix}resume** - Resumes playing the current song\n"
+                f"**{self.bot.command_prefix}prefix <new_prefix>** - Changes the command prefix\n"
+                f"**{self.bot.command_prefix}remove** - Removes the last song from the queue"
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text="Enjoy your music! 🎶")
+
+        self.help_message = embed
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -32,7 +42,7 @@ This is an unofficial music bot to play and stream music from YouTube. Below con
 
     @commands.command(name="help", help="Displays all the available commands")
     async def help(self, ctx):
-        await ctx.send(self.help_message)
+        await ctx.send(embed = self.help_message)
     
     @commands.command(name="prefix", help="Change bot prefix")
     async def prefix(self, ctx, new_prefix):
