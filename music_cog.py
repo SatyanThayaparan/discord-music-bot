@@ -3,6 +3,7 @@ from discord.ext import commands
 from yt_dlp import YoutubeDL
 from youtubesearchpython import VideosSearch
 import asyncio
+import googleapiclient.discovery
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -22,13 +23,23 @@ class music_cog(commands.Cog):
     # Function to search YouTube for a song
     def search_yt(self, item):
         if item.startswith("https://"):
-            # If the input is already a URL, extract the title
-            title = self.ytdl.extract_info(item, download=False)["title"]
-            return {'source': item, 'title': title}
+            # If the input is already a URL, extract the title and video ID
+            info = self.ytdl.extract_info(item, download=False)
+            return {'source': item, 'title': info['title'], 'id': info['id']}
         else:
             # If the input is a search query, search YouTube and return the first result
             search = VideosSearch(item, limit=1)
-            return {'source': search.result()["result"][0]["link"], 'title': search.result()["result"][0]["title"]}
+            result = search.result()["result"][0]
+            return {'source': result["link"], 'title': result["title"], 'id': result["id"]}
+
+    # Function to get thumbnail URL
+    async def get_thumbnail_url(self, video_id):
+        api_key = "REDACTED_YOUTUBE_API_KEY"
+        youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
+        request = youtube.videos().list(part="snippet", id=video_id)
+        response = request.execute()
+        thumbnail_url = response['items'][0]['snippet']['thumbnails']['default']['url']
+        return thumbnail_url
 
     # Function to play the next song in the queue
     async def play_next(self):
@@ -85,9 +96,10 @@ class music_cog(commands.Cog):
         query = " ".join(args)
         try:
             voice_channel = ctx.author.voice.channel
-        except:
+        except AttributeError:
             await ctx.send("You need to connect to a voice channel first!")
             return
+
         if self.is_paused:
             self.vc.resume()
         else:
@@ -98,6 +110,28 @@ class music_cog(commands.Cog):
                 self.music_queue.append([song, voice_channel])
                 if not self.is_playing:
                     await self.play_music(ctx)
+
+                # Log for debugging
+                print(f"Song found: {song}")
+
+                try:
+                    thumbnail_url = await self.get_thumbnail_url(song['id'])
+                except Exception as e:
+                    print(f"Error getting thumbnail: {e}")
+                    thumbnail_url = None
+
+                # Create an embed message with the song's title and a thumbnail
+                embed = discord.Embed(
+                    title=f"Added to the Queue: {song['title']}",
+                    description=f"[Watch on YouTube]({song['source']})",
+                    color=discord.Color.green()
+                )
+                if thumbnail_url:
+                    embed.set_thumbnail(url=thumbnail_url)
+                embed.set_footer(text="Enjoy your music! 🎶")
+
+                await ctx.send(embed=embed)
+
 
     # Command to pause the current song
     @commands.command(name="pause", help="Pauses the current song being played")

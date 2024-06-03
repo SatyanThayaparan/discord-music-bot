@@ -11,7 +11,8 @@ class help_cog(commands.Cog):
     def set_message(self):
         self.help_message = f"""
 ```
-General commands:
+Welcome to the Benji Bot!
+This is an unofficial music bot to play and stream music from YouTube. Below consists of the list of commands and their capabilities
 {self.bot.command_prefix}help - displays all the available commands
 {self.bot.command_prefix}q - displays the current music queue
 {self.bot.command_prefix}p <keywords> - finds the song on youtube and plays it in your current channel. Will resume playing the current song if it was paused
