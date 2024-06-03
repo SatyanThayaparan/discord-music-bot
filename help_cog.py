@@ -27,7 +27,11 @@ class help_cog(commands.Cog):
                 f"**{self.bot.command_prefix}pause** - Pauses the current song being played or resumes if already paused\n"
                 f"**{self.bot.command_prefix}resume** - Resumes playing the current song\n"
                 f"**{self.bot.command_prefix}prefix <new_prefix>** - Changes the command prefix\n"
-                f"**{self.bot.command_prefix}remove** - Removes the last song from the queue"
+                f"**{self.bot.command_prefix}remove** - Removes the last song from the queue\n"
+                f"**{self.bot.command_prefix}loop** - Loops the current song\n"
+                f"**{self.bot.command_prefix}unloop** - Stops looping the current song\n"
+                f"**{self.bot.command_prefix}add <position> <keywords>** - Adds a song to the queue at a specific position\n"
+                f"**{self.bot.command_prefix}swap <position1> <position2>** - Swaps the positions of songs in the queue"
             ),
             inline=False
         )
