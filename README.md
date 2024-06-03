@@ -17,6 +17,8 @@ Dependency Set up Instructions
         pip install google-api-python-client
         pip install pytube
         pip install spotipy
+        pip install spotipy spotdl
+
 
 Discord Developer Portal Instructions (05/2024)
 -------------------------------------

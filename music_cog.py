@@ -24,7 +24,7 @@ class music_cog(commands.Cog):
         self.ytdl = YoutubeDL(self.YDL_OPTIONS)           # YoutubeDL object for downloading YouTube videos
 
     # Function to search YouTube for a song
-    def search_yt(self, item):
+    def search(self, item):
         if item.startswith("https://"):
             # If the input is already a URL, extract the title and video ID
             info = self.ytdl.extract_info(item, download=False)
@@ -99,7 +99,7 @@ class music_cog(commands.Cog):
 
 
     # Command to play a song
-    @commands.command(name="play", aliases=["p", "playing"], help="Plays a selected song from YouTube")
+    @commands.command(name="play", aliases=["p", "playing"], help="Plays a selected song from YouTube or Spotify")
     async def play(self, ctx, *args):
         query = " ".join(args)
         try:
@@ -111,8 +111,8 @@ class music_cog(commands.Cog):
         if self.is_paused:
             self.vc.resume()
         else:
-            song = self.search_yt(query)
-            if type(song) == type(True):
+            song = self.search(query)
+            if not song:
                 await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
             else:
                 self.music_queue.append([song, voice_channel])
@@ -139,6 +139,7 @@ class music_cog(commands.Cog):
                 embed.set_footer(text="Enjoy your music! 🎶")
 
                 await ctx.send(embed=embed)
+
 
     # Command to add a playlist to the queue
     @commands.command(name="playlist", help="Adds all songs from a YouTube playlist to the queue")
@@ -304,7 +305,7 @@ class music_cog(commands.Cog):
             await ctx.send("Invalid position! The position should be between 1 and the current queue length + 1.")
             return
 
-        song = self.search_yt(query)
+        song = self.search(query)
         if type(song) == type(True):
             await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
         else:
