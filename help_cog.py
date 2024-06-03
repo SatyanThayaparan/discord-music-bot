@@ -28,6 +28,8 @@ class help_cog(commands.Cog):
                 f"**{self.bot.command_prefix}resume** - Resumes playing the current song\n"
                 f"**{self.bot.command_prefix}prefix <new_prefix>** - Changes the command prefix\n"
                 f"**{self.bot.command_prefix}remove** - Removes the last song from the queue\n"
+                f"**{self.bot.command_prefix}removeat <position>** - Removes a song at the specified position in the queue\n"
+                f"**{self.bot.command_prefix}removemultiple <positions>** - Removes songs from the queue at the specified positions\n"
                 f"**{self.bot.command_prefix}loop** - Loops the current song\n"
                 f"**{self.bot.command_prefix}unloop** - Stops looping the current song\n"
                 f"**{self.bot.command_prefix}add <position> <keywords>** - Adds a song to the queue at a specific position\n"
@@ -38,7 +40,17 @@ class help_cog(commands.Cog):
 
         embed.set_footer(text="Enjoy your music! 🎶")
 
+        # Increase font size for title and description
+        embed.title = f"**{embed.title}**"
+        embed.description = f"**{embed.description}**"
+
+        # Increase font size for command names
+        for field in embed.fields:
+            field.value = f"```fix\n{field.value}\n```"
+
         self.help_message = embed
+
+
 
     @commands.Cog.listener()
     async def on_ready(self):

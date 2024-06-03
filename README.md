@@ -15,6 +15,7 @@ Dependency Set up Instructions
         pip install yt_dlp
         pip install youtubesearchpython
         pip install google-api-python-client
+        pip install pytube
         pip install spotipy
 
 Discord Developer Portal Instructions (05/2024)

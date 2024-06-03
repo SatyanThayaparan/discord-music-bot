@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from yt_dlp import YoutubeDL
 from youtubesearchpython import VideosSearch
+from pytube import Playlist
 import asyncio
 import googleapiclient.discovery
 
@@ -139,6 +140,35 @@ class music_cog(commands.Cog):
 
                 await ctx.send(embed=embed)
 
+    # Command to add a playlist to the queue
+    @commands.command(name="playlist", help="Adds all songs from a YouTube playlist to the queue")
+    async def add_playlist_to_queue(self, ctx, playlist_url):
+        try:
+            playlist = Playlist(playlist_url)
+            if not playlist.videos:
+                await ctx.send(embed=discord.Embed(
+                    title="Playlist Error",
+                    description="No valid videos found in the playlist.",
+                    color=discord.Color.red()
+                ))
+                return
+
+            for video in playlist.videos:
+                if video.video_id:  # Check if the video is valid
+                    await self.play(ctx, video.watch_url)
+            
+            await ctx.send(embed=discord.Embed(
+                title="Playlist Added",
+                description=f"All valid songs from the playlist have been added to the queue.",
+                color=discord.Color.green()
+            ))
+        except Exception as e:
+            await ctx.send(embed=discord.Embed(
+                title="Error",
+                description=f"Error adding playlist to queue: {str(e)}",
+                color=discord.Color.red()
+            ))
+
 
     # Command to pause the current song
     @commands.command(name="pause", help="Pauses the current song being played")
@@ -220,6 +250,45 @@ class music_cog(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
+
+    # Command to remove a song at a specified position
+    @commands.command(name="removeat", aliases=["rmat"], help="Removes a song at the specified position in the queue")
+    async def remove_at(self, ctx, position: int):
+        if 0 < position <= len(self.music_queue):
+            removed_song = self.music_queue.pop(position - 1)
+            embed = discord.Embed(
+                description=f"Removed {removed_song[0]['title']} from position {position} in the queue.",
+                color=discord.Color.orange()
+            )
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                description=f"Invalid position. The queue currently has {len(self.music_queue)} songs.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+
+    # Command to remove multiple songs
+    @commands.command(name="removemultiple", aliases=["rmulti", "rmm"], help="Removes songs from the queue")
+    async def remove_multiple(self, ctx, *positions: int):
+        if len(positions) == 0:
+            await ctx.send("Please specify the positions of the songs you want to remove.")
+            return
+
+        removed_songs = []
+        for position in sorted(set(positions), reverse=True):
+            if 0 < position <= len(self.music_queue):
+                removed_songs.append(self.music_queue.pop(position - 1)[0]['title'])
+
+        if removed_songs:
+            embed = discord.Embed(
+                description=f"Removed the following songs from the queue:\n{', '.join(removed_songs)}",
+                color=discord.Color.orange()
+            )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("No songs were removed. Make sure you specify valid positions.")
+
 
     # Command to add a song at a specific position in the queue
     @commands.command(name="add", aliases=["a"], help="Adds a song to the queue at a specific position")
