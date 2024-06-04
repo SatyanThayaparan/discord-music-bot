@@ -82,6 +82,7 @@ class music_cog(commands.Cog):
             else:
                 await self.vc.move_to(self.music_queue[0][1])
             self.music_queue.pop(0)
+            self.seek_position = 0  # Reset seek position for the new song
             loop = asyncio.get_event_loop()
             try:
                 # Extract info for the song and play it
@@ -96,6 +97,29 @@ class music_cog(commands.Cog):
         else:
             # If there are no songs in the queue, set is_playing to False
             self.is_playing = False
+
+    async def seek(self, ctx, seconds: int):
+        if self.current_song is None:
+            await ctx.send("No song is currently playing.")
+            return
+
+        self.seek_position += seconds
+        if self.seek_position < 0:
+            self.seek_position = 0
+
+        m_url = self.current_song[0]['source']
+        loop = asyncio.get_event_loop()
+        try:
+            # Extract info for the song
+            data = await loop.run_in_executor(None, lambda: self.ytdl.extract_info(m_url, download=False))
+            song = data['url']
+            # Use the seek position in ffmpeg options
+            self.FFMPEG_OPTIONS['before_options'] += f" -ss {self.seek_position}"
+            self.vc.stop()
+            self.vc.play(discord.FFmpegPCMAudio(song, **self.FFMPEG_OPTIONS), after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(), self.bot.loop))
+        except Exception as e:
+            print(f"Error seeking in the song: {e}")
+            await ctx.send("An error occurred while trying to seek in the song.")
 
 
     # Command to play a song
@@ -139,6 +163,14 @@ class music_cog(commands.Cog):
                 embed.set_footer(text="Enjoy your music! 🎶")
 
                 await ctx.send(embed=embed)
+
+    @commands.command(name="ff", help="Fast forwards the current song by 5 seconds")
+    async def fast_forward(self, ctx):
+        await self.seek(ctx, 5)
+
+    @commands.command(name="rw", help="Rewinds the current song by 5 seconds")
+    async def rewind(self, ctx):
+        await self.seek(ctx, -5)
 
 
     # Command to add a playlist to the queue
