@@ -17,19 +17,28 @@ Personal Discord bot for playing music in voice channels, with queue controls an
 - discord.py
 - yt-dlp / YoutubeSearch
 - FFmpeg
-- Optional: YouTube Data API (thumbnails), Spotify-related packages if enabled in your environment
+- Optional: YouTube Data API (thumbnails)
 
 ## Setup
 
-1. Install [Python 3.10+](https://www.python.org/downloads/) and [FFmpeg](https://ffmpeg.org/download.html). Add `ffmpeg/bin` to your system `PATH`.
-2. Create a Discord application and bot at the [Discord Developer Portal](https://discord.com/developers/applications). Enable **Message Content**, **Server Members**, and **Presence** intents. Invite the bot with connect/speak/send-messages permissions.
-3. Install dependencies:
+1. Clone the repo and enter the project folder:
+
+```bash
+git clone https://github.com/SatyanThayaparan/discord-music-bot.git
+cd discord-music-bot
+```
+
+2. Install [Python 3.10+](https://www.python.org/downloads/) and [FFmpeg](https://ffmpeg.org/download.html). Add `ffmpeg/bin` to your system `PATH`.
+3. Create a Discord application and bot at the [Discord Developer Portal](https://discord.com/developers/applications):
+   - Enable **Message Content**, **Server Members**, and **Presence** intents
+   - Invite the bot with connect, speak, and send-messages permissions
+4. Install dependencies:
 
 ```bash
 pip install discord.py PyNaCl yt_dlp youtubesearchpython pytube python-dotenv google-api-python-client
 ```
 
-4. Copy the env template and fill in your secrets (`.env` is gitignored):
+5. Copy the env template and fill in your secrets (`.env` is gitignored):
 
 ```bash
 copy .env.example .env
@@ -40,7 +49,7 @@ TOKEN=your_discord_bot_token
 YOUTUBE_API_KEY=your_youtube_api_key
 ```
 
-5. Run the bot:
+6. Run the bot:
 
 ```bash
 python main.py
@@ -75,5 +84,4 @@ discord-music-bot/
 ## Notes
 
 - Secrets live only in `.env` on your machine. `.env.example` is safe to commit.
-- Rotate Discord/YouTube credentials that were ever committed or pasted into a README.
 - FFmpeg must be installed for audio playback.
