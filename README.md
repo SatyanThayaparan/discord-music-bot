@@ -29,11 +29,15 @@ Personal Discord bot for playing music in voice channels, with queue controls an
 pip install discord.py PyNaCl yt_dlp youtubesearchpython pytube python-dotenv google-api-python-client
 ```
 
-4. Create a `.env` file in the project root (never commit this file):
+4. Copy the env template and fill in your secrets (`.env` is gitignored):
+
+```bash
+copy .env.example .env
+```
 
 ```env
 TOKEN=your_discord_bot_token
-YOUTUBE_API_KEY=your_youtube_api_key_optional
+YOUTUBE_API_KEY=your_youtube_api_key
 ```
 
 5. Run the bot:
@@ -64,10 +68,12 @@ discord-music-bot/
 ├── main.py         # bot entrypoint
 ├── music_cog.py    # playback and queue commands
 ├── help_cog.py     # help command
-└── .env            # local secrets (not committed)
+├── .env.example    # template for required secrets
+└── .env            # local secrets (gitignored — do not commit)
 ```
 
 ## Notes
 
-- Store the Discord token and any API keys in `.env` only. Rotate any keys that were previously shared in chat or older README copies.
+- Secrets live only in `.env` on your machine. `.env.example` is safe to commit.
+- Rotate Discord/YouTube credentials that were ever committed or pasted into a README.
 - FFmpeg must be installed for audio playback.
