@@ -35,19 +35,36 @@ load_dotenv()
 
 log = logging.getLogger(__name__)
 
-YTDL_OPTS = {
-    "format": "bestaudio/best",
-    "quiet": True,
-    "no_warnings": True,
-    "default_search": "ytsearch",
-    "noplaylist": True,
-    "nocheckcertificate": True,
-    "extractor_args": {
-        "youtube": {"player_client": ["tv", "android", "web"]},
-    },
-}
+# Optional Netscape cookies file for YouTube bot-checks on datacenter IPs
+# (bot-hosting, VPS, etc.). Set YTDLP_COOKIES=/home/container/cookies.txt
+COOKIES_FILE = (os.getenv("YTDLP_COOKIES") or os.getenv("COOKIES_FILE") or "").strip()
+
+
+def _ytdl_base_opts() -> dict[str, Any]:
+    opts: dict[str, Any] = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "no_warnings": True,
+        "default_search": "ytsearch",
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "extractor_args": {
+            # Prefer clients that still expose media; cookies help when YT
+            # demands "sign in to confirm you're not a bot".
+            "youtube": {"player_client": ["android", "tv", "web"]},
+        },
+    }
+    if COOKIES_FILE and os.path.isfile(COOKIES_FILE):
+        opts["cookiefile"] = COOKIES_FILE
+    elif COOKIES_FILE:
+        log.warning("YTDLP_COOKIES set but file missing: %s", COOKIES_FILE)
+    return opts
+
+
+YTDL_OPTS = _ytdl_base_opts()
 
 YTDL_PLAYLIST_OPTS = {
+    **{k: v for k, v in YTDL_OPTS.items() if k != "format"},
     "quiet": True,
     "no_warnings": True,
     "extract_flat": "in_playlist",
@@ -70,6 +87,13 @@ class music_cog(commands.Cog):
         self.bot.add_view(QueuePanelView(self))
         if not self.refresh_panels.is_running():
             self.refresh_panels.start()
+        if YTDL_OPTS.get("cookiefile"):
+            log.info("yt-dlp using cookies file: %s", YTDL_OPTS["cookiefile"])
+        else:
+            log.warning(
+                "No YTDLP_COOKIES file — YouTube may block datacenter IPs "
+                "with 'Sign in to confirm you’re not a bot'."
+            )
 
     async def cog_unload(self) -> None:
         self.refresh_panels.cancel()

@@ -1,6 +1,8 @@
 # Secrets
 .env
 token.txt
+cookies.txt
+**/cookies.txt
 
 # Python
 __pycache__/
