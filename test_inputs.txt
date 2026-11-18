@@ -1,8 +1,42 @@
-Test inputs
+Smoke checklist (private test server)
+=====================================
+Prereq: join a voice channel, then run .\dev.ps1
 
-!p yimmy yimmy
+1. Play
+   !p yimmy yimmy
+   !p jolene victony
+   Expect: queued embeds, first track now-playing, audio starts
+
+2. Skip (must advance once only)
+   !skip
+   Expect: next song starts once (no double jump)
+
+3. Seek
+   !ff
+   !rw
+   Expect: same song continues from new offset (does not skip track)
+
+4. Queue UX
+   !q
+   Expect: now playing + paginated list if long
+
+5. Loop
+   !loop
+   !skip   (optional — should re-queue current when it ends)
+   !unloop
+
+6. Playlist (yt-dlp, max 50)
+   !playlist <youtube_playlist_url>
+   Expect: N tracks queued, playback starts if idle
+
+7. Teardown
+   !clear
+   !stop
+   Expect: no crash, bot leaves VC
+
+Extra sample searches
+---------------------
 !p dja dja
 !p kulosa camilla
-!p jolene victony
 !p soco tory
 !p sadquy

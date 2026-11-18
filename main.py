@@ -1,5 +1,6 @@
-import os
 import asyncio
+import logging
+import os
 
 import discord
 from discord.ext import commands
@@ -10,9 +11,17 @@ load_dotenv()
 from help_cog import help_cog
 from music_cog import music_cog
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("shiori-bot")
+
 token = os.getenv("TOKEN")
 if not token:
-    raise ValueError("No TOKEN found in environment variables. Copy .env.example to .env and set TOKEN.")
+    raise ValueError(
+        "No TOKEN found in environment variables. Copy .env.example to .env and set TOKEN."
+    )
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -30,8 +39,7 @@ async def load_extensions():
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user.name} ({bot.user.id})")
-    print("------")
+    log.info("Logged in as %s (%s)", bot.user.name, bot.user.id)
 
 
 async def main():
@@ -40,4 +48,5 @@ async def main():
         await bot.start(token)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
