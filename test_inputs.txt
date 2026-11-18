@@ -1,38 +1,54 @@
 Smoke checklist (private test server)
 =====================================
-Prereq: join a voice channel, then run .\dev.ps1
+Prereq: join a voice channel, then run .\run.ps1 (or .\dev.ps1)
 
-1. Play
-   !p yimmy yimmy
-   !p jolene victony
-   Expect: queued embeds, first track now-playing, audio starts
+1. Search picker
+   !p overtaken epic
+   Expect: embed with top results + dropdown; pick one; audio starts
 
-2. Skip (must advance once only)
+2. Direct URL
+   !p https://www.youtube.com/watch?v=dQw4w9WgXcQ
+   Expect: queues or plays without picker
+
+3. Panel / volume
+   Use Vol − / Vol + on Now Playing (or !vol 50 / !vol 100)
+   Expect: louder/quieter; panel shows Vol N%
+
+4. Skip (must advance once only)
    !skip
    Expect: next song starts once (no double jump)
 
-3. Seek
+5. Seek
    !ff
    !rw
    Expect: same song continues from new offset (does not skip track)
 
-4. Queue UX
+6. Queue UX
    !q
-   Expect: now playing + paginated list if long
+   Expect: spaced queue listing / panel Queue + Back
 
-5. Loop
+7. Loop
    !loop
    !skip   (optional — should re-queue current when it ends)
    !unloop
 
-6. Playlist (yt-dlp, max 50)
+8. Saved playlists
+   !save smoke-test
+   !playlists
+   !clear
+   !load smoke-test
+   !delplaylist smoke-test
+   Expect: save/load/delete without crash
+
+9. YouTube playlist (yt-dlp, max 50)
    !playlist <youtube_playlist_url>
    Expect: N tracks queued, playback starts if idle
 
-7. Teardown
+10. Teardown / idle
    !clear
    !stop
    Expect: no crash, bot leaves VC
+   (Optional) leave Benji alone in VC ~5 min — should auto-disconnect
 
 Extra sample searches
 ---------------------

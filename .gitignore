@@ -10,3 +10,6 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# Runtime data (saved playlists)
+data/playlists/*.json

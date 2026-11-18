@@ -24,6 +24,8 @@ CID_LOOP = "benji:loop"
 CID_STOP = "benji:stop"
 CID_QUEUE = "benji:queue"
 CID_BACK = "benji:back"
+CID_VOL_DOWN = "benji:vol_down"
+CID_VOL_UP = "benji:vol_up"
 
 # Discord cannot use custom hex colors on buttons — one shared style for branding consistency.
 BTN_STYLE = discord.ButtonStyle.secondary
@@ -89,7 +91,9 @@ def build_now_playing_embed(
     looping = bool(settings.get("is_looping"))
 
     title = "Paused" if paused else "Now playing"
-    status_bits = ["Paused" if paused else "Playing"]
+    vol = float(settings.get("volume") if settings.get("volume") is not None else 1.0)
+    vol_pct = int(round(vol * 100))
+    status_bits = ["Paused" if paused else "Playing", f"Vol {vol_pct}%"]
     if looping:
         status_bits.append("Looping this song")
     status_line = " · ".join(status_bits)
@@ -291,6 +295,42 @@ class NowPlayingView(discord.ui.View):
         await self._edit_panel(interaction, cog)
 
     @discord.ui.button(
+        label="Vol −",
+        emoji="🔉",
+        style=BTN_STYLE,
+        custom_id=CID_VOL_DOWN,
+        row=1,
+    )
+    async def btn_vol_down(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        cog = self._get_cog(interaction)
+        assert cog and interaction.guild_id
+        ok, err = await cog.panel_adjust_volume(interaction.guild_id, -0.1)
+        if not ok:
+            await self._deny(interaction, err or "Could not change volume.")
+            return
+        await self._edit_panel(interaction, cog)
+
+    @discord.ui.button(
+        label="Vol +",
+        emoji="🔊",
+        style=BTN_STYLE,
+        custom_id=CID_VOL_UP,
+        row=1,
+    )
+    async def btn_vol_up(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        cog = self._get_cog(interaction)
+        assert cog and interaction.guild_id
+        ok, err = await cog.panel_adjust_volume(interaction.guild_id, 0.1)
+        if not ok:
+            await self._deny(interaction, err or "Could not change volume.")
+            return
+        await self._edit_panel(interaction, cog)
+
+    @discord.ui.button(
         label="Loop",
         emoji="🔁",
         style=BTN_STYLE,
@@ -336,7 +376,7 @@ class NowPlayingView(discord.ui.View):
         emoji="📜",
         style=BTN_STYLE,
         custom_id=CID_QUEUE,
-        row=1,
+        row=2,
     )
     async def btn_queue(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -351,6 +391,88 @@ class NowPlayingView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=view)
         if interaction.message:
             cog.bot.add_view(view, message_id=interaction.message.id)
+
+
+class SearchSelectView(discord.ui.View):
+    """Pick from top YouTube search hits (ephemeral-friendly, short timeout)."""
+
+    def __init__(
+        self,
+        cog: "music_cog",
+        tracks: list[dict[str, Any]],
+        voice_channel: discord.abc.Snowflake,
+        requester_id: int,
+    ):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.tracks = tracks
+        self.voice_channel = voice_channel
+        self.requester_id = requester_id
+        self.add_item(_TrackSelect(cog, tracks, voice_channel, requester_id))
+
+
+class _TrackSelect(discord.ui.Select):
+    def __init__(
+        self,
+        cog: "music_cog",
+        tracks: list[dict[str, Any]],
+        voice_channel: discord.abc.Snowflake,
+        requester_id: int,
+    ):
+        self.cog = cog
+        self.tracks = tracks
+        self.voice_channel = voice_channel
+        self.requester_id = requester_id
+        options: list[discord.SelectOption] = []
+        for i, track in enumerate(tracks[:5]):
+            title = (track.get("title") or "Unknown")[:100]
+            dur = track.get("duration")
+            desc = format_timestamp(dur) if dur not in (None, "") else "YouTube"
+            options.append(
+                discord.SelectOption(
+                    label=title,
+                    value=str(i),
+                    description=str(desc)[:100],
+                )
+            )
+        super().__init__(
+            placeholder="Choose a track…",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user is None or interaction.user.id != self.requester_id:
+            await interaction.response.send_message(
+                embed=error_embed("Only the person who searched can pick."),
+                ephemeral=True,
+            )
+            return
+        idx = int(self.values[0])
+        track = self.tracks[idx]
+        await interaction.response.defer()
+        await self.cog.enqueue_track(
+            interaction.guild_id,  # type: ignore[arg-type]
+            track,
+            self.voice_channel,  # type: ignore[arg-type]
+            notify_channel=interaction.channel,
+            queued_by_interaction=interaction,
+        )
+        # Disable further picks
+        for child in self.view.children if self.view else []:
+            child.disabled = True  # type: ignore[union-attr]
+        try:
+            await interaction.edit_original_response(
+                embed=discord.Embed(
+                    title="Selected",
+                    description=f"**{track['title']}**\n[Open on YouTube]({track['source']})",
+                    color=EMBED_PRIMARY,
+                ),
+                view=self.view,
+            )
+        except discord.HTTPException:
+            pass
 
 
 class QueuePanelView(discord.ui.View):

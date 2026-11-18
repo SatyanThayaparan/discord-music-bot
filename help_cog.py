@@ -36,21 +36,26 @@ class help_cog(commands.Cog):
         hero.add_field(
             name="Playback",
             value=(
-                f"`{p}play` / `{p}p` `<query|url>` — play or enqueue\n"
+                f"`{p}play` / `{p}p` `<query|url>` — search picker or play URL\n"
                 f"`{p}pause` — pause (or resume if paused)\n"
                 f"`{p}resume` / `{p}r` — resume\n"
                 f"`{p}skip` / `{p}s` — next track\n"
                 f"`{p}ff` / `{p}rw` — seek ±10 seconds\n"
+                f"`{p}volume` / `{p}vol` `[0-200]` — show or set volume\n"
                 f"`{p}loop` / `{p}unloop` — repeat current song\n"
                 f"`{p}stop` — leave voice"
             ),
             inline=False,
         )
         hero.add_field(
-            name="Queue",
+            name="Queue & playlists",
             value=(
                 f"`{p}queue` / `{p}q` — show what's up next\n"
-                f"`{p}playlist` `<url>` — add up to 50 tracks\n"
+                f"`{p}playlist` `<url>` — add up to 50 YouTube tracks\n"
+                f"`{p}save` `<name>` — save now+queue as a playlist\n"
+                f"`{p}load` `<name>` — load a saved playlist\n"
+                f"`{p}playlists` — list saved playlists\n"
+                f"`{p}delplaylist` `<name>` — delete a saved playlist\n"
                 f"`{p}clear` — wipe the queue\n"
                 f"`{p}remove` / `{p}rm` — drop the last queued song\n"
                 f"`{p}removeat` / `{p}rmat` `<n>` — drop position *n*\n"
@@ -63,7 +68,8 @@ class help_cog(commands.Cog):
             name="Bot",
             value=(
                 f"`{p}help` — this menu\n"
-                f"`{p}prefix` `<new>` — change prefix until restart"
+                f"`{p}prefix` `<new>` — change prefix until restart\n"
+                "Leaves VC after 5 minutes alone or fully idle."
             ),
             inline=False,
         )

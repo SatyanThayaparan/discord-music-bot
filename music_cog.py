@@ -26,10 +26,12 @@ from player_view import (
     CID_PAUSE,
     NowPlayingView,
     QueuePanelView,
+    SearchSelectView,
     build_now_playing_embed,
     build_queue_embed,
     playback_position_seconds,
 )
+import playlists_store
 
 load_dotenv()
 
@@ -73,6 +75,12 @@ YTDL_PLAYLIST_OPTS = {
 
 PLAYLIST_CAP = 50
 QUEUE_PAGE_SIZE = 15
+SEARCH_RESULT_LIMIT = 5
+IDLE_TIMEOUT_SEC = 300  # leave VC after 5 minutes alone / idle
+DEFAULT_VOLUME = 1.0
+VOLUME_STEP = 0.1
+VOLUME_MIN = 0.0
+VOLUME_MAX = 2.0
 
 
 class music_cog(commands.Cog):
@@ -87,6 +95,8 @@ class music_cog(commands.Cog):
         self.bot.add_view(QueuePanelView(self))
         if not self.refresh_panels.is_running():
             self.refresh_panels.start()
+        if not self.idle_watchdog.is_running():
+            self.idle_watchdog.start()
         if YTDL_OPTS.get("cookiefile"):
             log.info("yt-dlp using cookies file: %s", YTDL_OPTS["cookiefile"])
         else:
@@ -97,6 +107,7 @@ class music_cog(commands.Cog):
 
     async def cog_unload(self) -> None:
         self.refresh_panels.cancel()
+        self.idle_watchdog.cancel()
 
     def ensure_guild_settings(self, guild_id: int) -> dict[str, Any]:
         if guild_id not in self.guild_settings:
@@ -114,16 +125,30 @@ class music_cog(commands.Cog):
                 "panel_message_id": None,
                 "panel_channel_id": None,
                 "panel_mode": "now",
+                "volume": DEFAULT_VOLUME,
+                "last_activity_at": time.monotonic(),
+                "alone_since": None,
+                "idle_since": None,
             }
         settings = self.guild_settings[guild_id]
         settings.setdefault("panel_message_id", None)
         settings.setdefault("panel_channel_id", None)
         settings.setdefault("playback_started_at", None)
         settings.setdefault("panel_mode", "now")
+        settings.setdefault("volume", DEFAULT_VOLUME)
+        settings.setdefault("last_activity_at", time.monotonic())
+        settings.setdefault("alone_since", None)
+        settings.setdefault("idle_since", None)
         return settings
+
+    def _touch_activity(self, settings: dict[str, Any]) -> None:
+        settings["last_activity_at"] = time.monotonic()
+        settings["alone_since"] = None
+        settings["idle_since"] = None
 
     def _mark_playback_started(self, settings: dict[str, Any]) -> None:
         settings["playback_started_at"] = time.monotonic()
+        self._touch_activity(settings)
 
     def _freeze_playback_position(self, settings: dict[str, Any]) -> None:
         settings["seek_position"] = playback_position_seconds(settings)
@@ -243,7 +268,82 @@ class music_cog(commands.Cog):
     async def _before_refresh_panels(self) -> None:
         await self.bot.wait_until_ready()
 
+    @tasks.loop(seconds=30.0)
+    async def idle_watchdog(self) -> None:
+        """Leave voice when alone or fully idle for IDLE_TIMEOUT_SEC."""
+        now = time.monotonic()
+        for guild_id, settings in list(self.guild_settings.items()):
+            vc = settings.get("vc")
+            if vc is None or not vc.is_connected() or vc.channel is None:
+                settings["alone_since"] = None
+                settings["idle_since"] = None
+                continue
+
+            humans = [m for m in vc.channel.members if not m.bot]
+            alone = len(humans) == 0
+            idle = (
+                not settings.get("is_playing")
+                and not settings.get("is_paused")
+                and not settings.get("music_queue")
+                and settings.get("current_song") is None
+            )
+
+            if alone:
+                if settings.get("alone_since") is None:
+                    settings["alone_since"] = now
+                elif now - float(settings["alone_since"]) >= IDLE_TIMEOUT_SEC:
+                    log.info("Idle disconnect (alone) guild %s", guild_id)
+                    await self.panel_stop(guild_id)
+                    await self.upsert_panel(guild_id, force_now=True)
+                    channel = self.bot.get_channel(settings.get("notify_channel_id") or 0)
+                    if channel:
+                        await channel.send(
+                            embed=info_embed(
+                                "Left the voice channel after 5 minutes alone."
+                            )
+                        )
+                    continue
+            else:
+                settings["alone_since"] = None
+
+            if idle and not alone:
+                if settings.get("idle_since") is None:
+                    settings["idle_since"] = now
+                elif now - float(settings["idle_since"]) >= IDLE_TIMEOUT_SEC:
+                    log.info("Idle disconnect (silent) guild %s", guild_id)
+                    await self.panel_stop(guild_id)
+                    await self.upsert_panel(guild_id, force_now=True)
+                    channel = self.bot.get_channel(settings.get("notify_channel_id") or 0)
+                    if channel:
+                        await channel.send(
+                            embed=info_embed(
+                                "Left the voice channel after 5 minutes idle."
+                            )
+                        )
+            elif not idle:
+                settings["idle_since"] = None
+
+    @idle_watchdog.before_loop
+    async def _before_idle_watchdog(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def panel_adjust_volume(
+        self, guild_id: int, delta: float
+    ) -> Tuple[bool, Optional[str]]:
+        settings = self.ensure_guild_settings(guild_id)
+        current = float(settings.get("volume", DEFAULT_VOLUME))
+        new_vol = max(VOLUME_MIN, min(VOLUME_MAX, round(current + delta, 2)))
+        settings["volume"] = new_vol
+        self._touch_activity(settings)
+        vc = settings.get("vc")
+        if vc is not None and vc.source is not None:
+            if isinstance(vc.source, discord.PCMVolumeTransformer):
+                vc.source.volume = new_vol
+        return True, None
+
     async def panel_toggle_pause(self, guild_id: int) -> Tuple[bool, Optional[str]]:
+        settings = self.ensure_guild_settings(guild_id)
+        self._touch_activity(settings)
         settings = self.ensure_guild_settings(guild_id)
         vc = settings.get("vc")
         if vc is None:
@@ -293,7 +393,9 @@ class music_cog(commands.Cog):
             settings["ignore_after"] = True
             if vc.is_playing() or vc.is_paused():
                 vc.stop()
-            source = self._build_audio_source(path, seek=settings["seek_position"])
+            source = self._build_audio_source(
+                path, seek=settings["seek_position"], volume=settings.get("volume")
+            )
             vc.play(source, after=self._schedule_after(guild_id))
             settings["is_playing"] = True
             settings["is_paused"] = False
@@ -309,6 +411,7 @@ class music_cog(commands.Cog):
         if not (settings["is_playing"] or settings["is_paused"]):
             return False, "No song is currently being played."
         settings["is_looping"] = not settings["is_looping"]
+        self._touch_activity(settings)
         return True, None
 
     async def panel_stop(self, guild_id: int) -> None:
@@ -342,7 +445,30 @@ class music_cog(commands.Cog):
         with YoutubeDL(opts) as ytdl:
             return ytdl.extract_info(query, download=False)
 
-    async def resolve_track(self, query: str) -> Optional[dict[str, str]]:
+    def _info_to_track(self, info: dict[str, Any]) -> Optional[dict[str, Any]]:
+        if not info:
+            return None
+        video_id = info.get("id")
+        webpage = info.get("webpage_url") or info.get("url")
+        if video_id and (not webpage or not str(webpage).startswith("http")):
+            webpage = f"https://www.youtube.com/watch?v={video_id}"
+        title = info.get("title") or "Unknown title"
+        if not webpage:
+            return None
+        track: dict[str, Any] = {
+            "source": webpage,
+            "title": title,
+            "id": str(video_id) if video_id else "",
+        }
+        duration = info.get("duration")
+        if duration is not None:
+            try:
+                track["duration"] = int(duration)
+            except (TypeError, ValueError):
+                pass
+        return track
+
+    async def resolve_track(self, query: str) -> Optional[dict[str, Any]]:
         query = (query or "").strip()
         if not query:
             return None
@@ -356,28 +482,67 @@ class music_cog(commands.Cog):
                 if not entries:
                     return None
                 info = entries[0]
-            video_id = info.get("id")
-            webpage = info.get("webpage_url") or info.get("url")
-            if video_id and not webpage:
-                webpage = f"https://www.youtube.com/watch?v={video_id}"
-            title = info.get("title") or "Unknown title"
-            if not webpage:
-                return None
-            duration = info.get("duration")
-            track = {
-                "source": webpage,
-                "title": title,
-                "id": str(video_id) if video_id else "",
-            }
-            if duration is not None:
-                try:
-                    track["duration"] = int(duration)
-                except (TypeError, ValueError):
-                    pass
-            return track
+            return self._info_to_track(info)
         except Exception:
             log.exception("resolve_track failed for %r", query)
             return None
+
+    async def resolve_search(
+        self, query: str, *, limit: int = SEARCH_RESULT_LIMIT
+    ) -> list[dict[str, Any]]:
+        query = (query or "").strip()
+        if not query:
+            return []
+        try:
+            target = f"ytsearch{limit}:{query}"
+            info = await asyncio.to_thread(self._extract_info, target, playlist=False)
+            if not info:
+                return []
+            entries = info.get("entries") if isinstance(info, dict) else None
+            if not entries:
+                track = self._info_to_track(info)
+                return [track] if track else []
+            tracks: list[dict[str, Any]] = []
+            for entry in entries:
+                if not entry:
+                    continue
+                track = self._info_to_track(entry)
+                if track:
+                    tracks.append(track)
+                if len(tracks) >= limit:
+                    break
+            return tracks
+        except Exception:
+            log.exception("resolve_search failed for %r", query)
+            return []
+
+    async def enqueue_track(
+        self,
+        guild_id: int,
+        track: dict[str, Any],
+        voice_channel: discord.abc.Snowflake,
+        *,
+        notify_channel: Any = None,
+        queued_by_interaction: Optional[discord.Interaction] = None,
+    ) -> None:
+        settings = self.ensure_guild_settings(guild_id)
+        self._touch_activity(settings)
+        if notify_channel is not None and getattr(notify_channel, "id", None):
+            settings["notify_channel_id"] = notify_channel.id
+        settings["music_queue"].append([track, voice_channel])
+        should_start = not settings["is_playing"] and not settings["is_paused"]
+        if should_start:
+            await self.start_track(guild_id)
+        else:
+            await self.upsert_panel(guild_id)
+            embed = await self._queue_embed(track, title=f"Queued: {track['title']}")
+            if queued_by_interaction is not None:
+                try:
+                    await queued_by_interaction.followup.send(embed=embed)
+                except discord.HTTPException:
+                    pass
+            elif notify_channel is not None:
+                await notify_channel.send(embed=embed)
 
     async def resolve_playlist(self, playlist_url: str) -> list[dict[str, str]]:
         try:
@@ -462,11 +627,19 @@ class music_cog(commands.Cog):
     async def prepare_audio(self, page_url: str) -> Optional[dict[str, str]]:
         return await asyncio.to_thread(self._download_audio, page_url)
 
-    def _build_audio_source(self, file_path: str, *, seek: int = 0):
+    def _build_audio_source(
+        self,
+        file_path: str,
+        *,
+        seek: int = 0,
+        volume: Optional[float] = None,
+    ):
         options = "-vn"
         if seek > 0:
             options = f"-vn -ss {seek}"
-        return discord.FFmpegPCMAudio(file_path, options=options)
+        raw = discord.FFmpegPCMAudio(file_path, options=options)
+        vol = DEFAULT_VOLUME if volume is None else float(volume)
+        return discord.PCMVolumeTransformer(raw, volume=vol)
 
     async def get_thumbnail_url(self, video_id: str) -> Optional[str]:
         if not video_id:
@@ -647,7 +820,9 @@ class music_cog(commands.Cog):
             if vc.is_playing() or vc.is_paused():
                 settings["ignore_after"] = True
                 vc.stop()
-            source = self._build_audio_source(audio["path"])
+            source = self._build_audio_source(
+                audio["path"], volume=settings.get("volume")
+            )
             vc.play(source, after=self._schedule_after(guild_id))
             self._mark_playback_started(settings)
             log.info("Playing %s from %s", song["title"], audio["path"])
@@ -716,12 +891,27 @@ class music_cog(commands.Cog):
             return
 
         guild_id = ctx.guild.id
-        settings = self.ensure_guild_settings(guild_id)
         self._remember_channel(ctx)
         voice_channel = ctx.author.voice.channel
+        self._touch_activity(self.ensure_guild_settings(guild_id))
 
-        song = await self.resolve_track(query)
-        if not song:
+        # Direct URL → play immediately; search → pick from top results.
+        if query.startswith("http"):
+            song = await self.resolve_track(query)
+            if not song:
+                await ctx.send(
+                    embed=error_embed(
+                        "Could not find that track. Try another search or URL."
+                    )
+                )
+                return
+            await self.enqueue_track(
+                guild_id, song, voice_channel, notify_channel=ctx.channel
+            )
+            return
+
+        results = await self.resolve_search(query, limit=SEARCH_RESULT_LIMIT)
+        if not results:
             await ctx.send(
                 embed=error_embed(
                     "Could not find that track. Try another search or URL."
@@ -729,18 +919,17 @@ class music_cog(commands.Cog):
             )
             return
 
-        settings["music_queue"].append([song, voice_channel])
-        should_start = not settings["is_playing"] and not settings["is_paused"]
-
-        if should_start:
-            await self.start_track(guild_id)
-        else:
-            await self.upsert_panel(guild_id)
-            await ctx.send(
-                embed=await self._queue_embed(
-                    song, title=f"Queued: {song['title']}"
-                )
-            )
+        lines = []
+        for i, track in enumerate(results, start=1):
+            dur = track.get("duration")
+            dur_bit = f" · `{dur // 60}:{dur % 60:02d}`" if isinstance(dur, int) else ""
+            lines.append(f"**{i}.** {track['title']}{dur_bit}")
+        embed = info_embed(
+            "\n\n".join(lines),
+            title="Pick a track",
+        )
+        view = SearchSelectView(self, results, voice_channel, ctx.author.id)
+        await ctx.send(embed=embed, view=view)
 
     @commands.command(name="ff", help="Fast-forward 10 seconds")
     async def fast_forward(self, ctx: commands.Context):
@@ -979,3 +1168,107 @@ class music_cog(commands.Cog):
             await self.upsert_panel(ctx.guild.id)
         else:
             await ctx.send(embed=warn_embed("Looping is not enabled."))
+
+    @commands.command(name="volume", aliases=["vol"], help="Set volume 0–200%")
+    async def volume_cmd(self, ctx: commands.Context, level: Optional[int] = None):
+        settings = self.ensure_guild_settings(ctx.guild.id)
+        if level is None:
+            pct = int(round(float(settings.get("volume", DEFAULT_VOLUME)) * 100))
+            await ctx.send(embed=info_embed(f"Volume is **{pct}%**"))
+            return
+        if level < 0 or level > 200:
+            await ctx.send(embed=warn_embed("Use a volume between **0** and **200**."))
+            return
+        target = level / 100.0
+        delta = target - float(settings.get("volume", DEFAULT_VOLUME))
+        await self.panel_adjust_volume(ctx.guild.id, delta)
+        await self.upsert_panel(ctx.guild.id)
+        await ctx.send(embed=ok_embed(f"Volume set to **{level}%**"))
+
+    def _snapshot_tracks(self, settings: dict[str, Any]) -> list[dict[str, Any]]:
+        tracks: list[dict[str, Any]] = []
+        if settings.get("current_song"):
+            song = dict(settings["current_song"][0])
+            tracks.append(song)
+        for entry in settings.get("music_queue") or []:
+            tracks.append(dict(entry[0]))
+        return tracks
+
+    @commands.command(name="save", help="Save current + queue as a named playlist")
+    async def save_playlist_cmd(self, ctx: commands.Context, name: str):
+        settings = self.ensure_guild_settings(ctx.guild.id)
+        tracks = self._snapshot_tracks(settings)
+        if not tracks:
+            await ctx.send(embed=warn_embed("Nothing to save — play or queue something first."))
+            return
+        ok, result = playlists_store.save_playlist(ctx.guild.id, name, tracks)
+        if not ok:
+            await ctx.send(embed=error_embed(result))
+            return
+        await ctx.send(
+            embed=ok_embed(
+                f"Saved **{len(tracks)}** track(s) as `{result}`.",
+                title="Playlist saved",
+            )
+        )
+
+    @commands.command(name="load", help="Load a saved playlist into the queue")
+    async def load_playlist_cmd(self, ctx: commands.Context, name: str):
+        if ctx.author.voice is None or ctx.author.voice.channel is None:
+            await ctx.send(
+                embed=warn_embed("Join a voice channel first, then try again.")
+            )
+            return
+        tracks, key_or_err = playlists_store.load_playlist(ctx.guild.id, name)
+        if tracks is None:
+            await ctx.send(embed=error_embed(key_or_err))
+            return
+
+        guild_id = ctx.guild.id
+        settings = self.ensure_guild_settings(guild_id)
+        self._remember_channel(ctx)
+        self._touch_activity(settings)
+        voice_channel = ctx.author.voice.channel
+        for track in tracks[:PLAYLIST_CAP]:
+            settings["music_queue"].append([track, voice_channel])
+
+        should_start = not settings["is_playing"] and not settings["is_paused"]
+        await ctx.send(
+            embed=ok_embed(
+                f"Loaded **{min(len(tracks), PLAYLIST_CAP)}** track(s) from `{key_or_err}`.",
+                title="Playlist loaded",
+            )
+        )
+        if should_start:
+            await self.start_track(guild_id)
+        else:
+            await self.upsert_panel(guild_id)
+
+    @commands.command(name="playlists", aliases=["pls"], help="List saved playlists")
+    async def list_playlists_cmd(self, ctx: commands.Context):
+        names = playlists_store.list_names(ctx.guild.id)
+        if not names:
+            await ctx.send(
+                embed=empty_embed(
+                    f"No saved playlists yet. Use `{ctx.prefix}save <name>`."
+                )
+            )
+            return
+        await ctx.send(
+            embed=info_embed(
+                "\n".join(f"• `{n}`" for n in names),
+                title="Saved playlists",
+            )
+        )
+
+    @commands.command(
+        name="delplaylist",
+        aliases=["unsaved", "rmplaylist"],
+        help="Delete a saved playlist",
+    )
+    async def delete_playlist_cmd(self, ctx: commands.Context, name: str):
+        ok, result = playlists_store.delete_playlist(ctx.guild.id, name)
+        if not ok:
+            await ctx.send(embed=error_embed(result))
+            return
+        await ctx.send(embed=warn_embed(f"Deleted playlist `{result}`."))
